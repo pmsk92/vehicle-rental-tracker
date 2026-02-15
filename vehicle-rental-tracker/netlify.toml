@@ -1,0 +1,9 @@
+[build]
+publish = "."
+command = ""
+
+# Optional: improve caching for static files
+[headers]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000"
