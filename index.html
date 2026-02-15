@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Rental Expense Tracker</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script type="module" src="firebase-config.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Car Rental Expense Tracker</h1>
+        <p class="subtitle">Track your rental expenses efficiently</p>
+        
+        <div class="card-container">
+            <div class="card" onclick="window.location.href='driver.html'">
+                <h2>🚗 Driver Form</h2>
+                <p>Submit trip expenses</p>
+            </div>
+            <div class="card" onclick="window.location.href='admin.html'">
+                <h2>🔒 Admin</h2>
+                <p>Dashboard & reports</p>
+            </div>
+        </div>
+        
+        <div class="landing-footer">
+            <a href="admin.html">🔒 Admin Login</a>
+        </div>
+    </div>
+</body>
+</html>
