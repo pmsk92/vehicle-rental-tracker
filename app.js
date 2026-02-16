@@ -12,7 +12,7 @@ const LOGIN_KEY = 'carRentalAdminLoggedIn';
 
 // Google Sheet (Option 1): set to your Apps Script Web App URL to save/load from Sheet. Leave '' to disable.
 // Example: 'https://script.google.com/macros/s/XXXXXXXXXX/exec'
-const GOOGLE_SCRIPT_URL = '';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz69FpOOVpTjx-4OtsN_H8vNF_kwqQBhv5PvrvMhOq6-AkBylvlHoP_dDkKCvxctCb9xA/exec';
 
 // Initialize data storage
 function initStorage() {
