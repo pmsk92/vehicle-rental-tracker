@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Car Rental Tracker</title>
-    <link rel="stylesheet" href="styles.css?v=2">
+    <link rel="stylesheet" href="styles.css?v=3">
     <script type="module" src="firebase-config.js"></script>
 </head>
 <body>
@@ -50,19 +50,19 @@
 
         <!-- Summary Cards -->
         <div class="stats-container">
-            <div class="stat-card">
+            <div class="stat-card stat-card-revenue">
                 <h3>Total Revenue</h3>
                 <p class="stat-value" id="totalRevenue">₹0</p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-expenses">
                 <h3>Total Expenses</h3>
                 <p class="stat-value" id="totalExpenses">₹0</p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-profit">
                 <h3>Net Profit</h3>
                 <p class="stat-value" id="netProfit">₹0</p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-card-trips">
                 <h3>Total Trips</h3>
                 <p class="stat-value" id="totalTrips">0</p>
             </div>
@@ -73,12 +73,16 @@
             <div class="stat-card">
                 <h3>Profit Share - Vimal</h3>
                 <p class="stat-value" id="profitShareVimal">₹0</p>
+                <p class="stat-summary" id="partnerReceivedVimal">Received: ₹0</p>
+                <p class="stat-summary" id="partnerSpentVimal">Spent (maintenance): ₹0</p>
                 <p class="stat-sub" id="profitAdjustVimal"></p>
                 <p class="stat-sub" id="settlementVimal"></p>
             </div>
             <div class="stat-card">
                 <h3>Profit Share - Sarath</h3>
                 <p class="stat-value" id="profitShareSarath">₹0</p>
+                <p class="stat-summary" id="partnerReceivedSarath">Received: ₹0</p>
+                <p class="stat-summary" id="partnerSpentSarath">Spent (maintenance): ₹0</p>
                 <p class="stat-sub" id="profitAdjustSarath"></p>
                 <p class="stat-sub" id="settlementSarath"></p>
             </div>
@@ -275,6 +279,6 @@
         </div>
     </div> <!-- Close dashboardContent -->
     
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>
