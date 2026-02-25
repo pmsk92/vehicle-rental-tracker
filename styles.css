@@ -23,6 +23,19 @@
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
     --shadow-lg: 0 10px 40px rgba(0,0,0,0.12);
+    /* Dashboard card tints - light, professional */
+    --card-revenue-bg: #eff6ff;
+    --card-revenue-text: #1e40af;
+    --card-expenses-bg: #fff7ed;
+    --card-expenses-text: #c2410c;
+    --card-profit-bg: #f0fdf4;
+    --card-profit-text: #15803d;
+    --card-trips-bg: #f5f3ff;
+    --card-trips-text: #5b21b6;
+    --card-partner-bg: #f8fafc;
+    --card-partner-border: #e2e8f0;
+    --card-partner-label: #64748b;
+    --card-partner-value: #0f172a;
     --btn-padding-y: 12px;
     --btn-padding-x: 24px;
     --btn-sm-y: 8px;
@@ -321,23 +334,65 @@ h2 {
 }
 
 .profit-stats {
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
 }
 
 .stat-card {
-    background: var(--bg-subtle);
     padding: var(--space-lg);
     border-radius: var(--radius-lg);
     text-align: center;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(0,0,0,0.06);
     min-height: 120px;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.stat-card-revenue {
+    background: var(--card-revenue-bg);
+}
+.stat-card-revenue h3,
+.stat-card-revenue .stat-value { color: var(--card-revenue-text); }
+
+.stat-card-expenses {
+    background: var(--card-expenses-bg);
+}
+.stat-card-expenses h3,
+.stat-card-expenses .stat-value { color: var(--card-expenses-text); }
+
+.stat-card-profit {
+    background: var(--card-profit-bg);
+}
+.stat-card-profit h3 { color: var(--card-partner-label); }
+.stat-card-profit .stat-value { color: var(--card-profit-text); }
+
+.stat-card-trips {
+    background: var(--card-trips-bg);
+}
+.stat-card-trips h3,
+.stat-card-trips .stat-value { color: var(--card-trips-text); }
+
+.profit-stats .stat-card {
+    background: var(--card-partner-bg);
+    border-color: var(--card-partner-border);
+    min-height: 140px;
+}
+.profit-stats .stat-card h3 {
+    color: var(--card-partner-label);
+    font-size: 0.875rem;
+}
+.profit-stats .stat-card .stat-value {
+    color: var(--card-partner-value);
+    font-size: 1.35rem;
 }
 
 .stat-card h3 {
-    color: var(--text-muted);
     font-size: 0.875rem;
     font-weight: 600;
     margin-bottom: var(--space-sm);
@@ -351,10 +406,17 @@ h2 {
     color: var(--text);
 }
 
+.stat-summary {
+    margin-top: var(--space-xs);
+    font-size: 0.75rem;
+    color: var(--card-partner-label);
+    line-height: 1.4;
+}
+
 .stat-sub {
     margin-top: var(--space-xs);
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--card-partner-label);
 }
 
 /* ===== Sections ===== */
