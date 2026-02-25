@@ -26,6 +26,11 @@ function initStorage() {
 
 // Data folder API: when server is running (e.g. server.py on 8010), use it; else localStorage
 const ARCHIVE_BASE = (typeof window !== 'undefined' && window.location.port === '8010') ? '' : 'http://localhost:8010';
+// When on localhost:8010, use server proxy for Sheet to avoid CORS (set GOOGLE_SCRIPT_URL env when starting server)
+const USE_SHEET_PROXY = typeof window !== 'undefined' && window.location.port === '8010';
+// So a slow sheet?action=all doesn't overwrite the UI with stale data right after a delete
+var recentlyDeletedTripIds = {};
+var recentlyDeletedMaintenanceIds = {};
 
 async function sendToArchive(path, payload) {
     try {
@@ -53,15 +58,21 @@ async function getTrips() {
     }
     if (GOOGLE_SCRIPT_URL) {
         try {
-            const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=trips`);
-            if (res.ok) {
+            const url = USE_SHEET_PROXY ? '/api/sheet?action=trips' : `${GOOGLE_SCRIPT_URL}?action=trips`;
+            const res = await fetch(url);
+            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+            if (res.ok && contentType.includes('application/json')) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
                     localStorage.setItem(TRIPS_KEY, JSON.stringify(data));
                     return data;
                 }
+            } else if (res.ok) {
+                console.warn('Google Sheet returned non-JSON (trips). Set deployment to "Anyone" so the app can read data.');
             }
-        } catch (e) { /* Sheet not available */ }
+        } catch (e) {
+            console.warn('Google Sheet trips fetch failed:', e.message || e);
+        }
     }
     if (ARCHIVE_BASE !== undefined) {
         try {
@@ -91,15 +102,21 @@ async function getMaintenance() {
     }
     if (GOOGLE_SCRIPT_URL) {
         try {
-            const res = await fetch(`${GOOGLE_SCRIPT_URL}?action=maintenance`);
-            if (res.ok) {
+            const url = USE_SHEET_PROXY ? '/api/sheet?action=maintenance' : `${GOOGLE_SCRIPT_URL}?action=maintenance`;
+            const res = await fetch(url);
+            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+            if (res.ok && contentType.includes('application/json')) {
                 const data = await res.json();
                 if (Array.isArray(data)) {
                     localStorage.setItem(MAINTENANCE_KEY, JSON.stringify(data));
                     return data;
                 }
+            } else if (res.ok) {
+                console.warn('Google Sheet returned non-JSON (maintenance). Set deployment to "Anyone".');
             }
-        } catch (e) { /* Sheet not available */ }
+        } catch (e) {
+            console.warn('Google Sheet maintenance fetch failed:', e.message || e);
+        }
     }
     if (ARCHIVE_BASE !== undefined) {
         try {
@@ -128,12 +145,29 @@ async function saveTrip(trip) {
     sendToArchive('/api/save_trip', trip);
     if (GOOGLE_SCRIPT_URL) {
         try {
-            await fetch(GOOGLE_SCRIPT_URL, {
+            const url = USE_SHEET_PROXY ? '/api/sheet' : GOOGLE_SCRIPT_URL;
+            const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'trip', data: trip })
             });
-        } catch (err) { console.warn('Google Sheet save failed:', err); }
+            const text = await res.text();
+            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+            if (!res.ok || !contentType.includes('application/json')) {
+                console.error('Google Sheet trip save failed:', res.status, contentType, text.slice(0, 300));
+                alert('Trip saved on this device but could not sync to Google Sheet.\n\nStatus: ' + res.status + '. Open browser Console (F12) for details.\n\nCheck: Deploy → Manage deployments → Edit → Who has access = "Anyone", Execute as = "Me". Deploy a NEW version after changing.');
+                return true;
+            }
+            let data;
+            try { data = JSON.parse(text); } catch (_) { data = {}; }
+            if (!data || !data.ok) {
+                console.error('Google Sheet trip save error:', data);
+                alert('Trip saved on this device but could not sync to Google Sheet. Server returned: ' + (data && data.error ? data.error : text.slice(0, 100)));
+            }
+        } catch (err) {
+            console.warn('Google Sheet save failed:', err);
+            alert('Trip saved on this device but could not sync to Google Sheet. Network/CORS error. Open Console (F12) for details.');
+        }
     }
     return true;
 }
@@ -149,12 +183,29 @@ async function saveMaintenance(maintenance) {
     sendToArchive('/api/save_maintenance', maintenance);
     if (GOOGLE_SCRIPT_URL) {
         try {
-            await fetch(GOOGLE_SCRIPT_URL, {
+            const url = USE_SHEET_PROXY ? '/api/sheet' : GOOGLE_SCRIPT_URL;
+            const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'maintenance', data: maintenance })
             });
-        } catch (err) { console.warn('Google Sheet save failed:', err); }
+            const text = await res.text();
+            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+            if (!res.ok || !contentType.includes('application/json')) {
+                console.error('Google Sheet maintenance save failed:', res.status, text.slice(0, 200));
+                alert('Maintenance saved on this device but could not sync to Google Sheet. Ask admin to set deployment to "Anyone".');
+                return true;
+            }
+            let data;
+            try { data = JSON.parse(text); } catch (_) { data = {}; }
+            if (!data || !data.ok) {
+                console.error('Google Sheet maintenance save error:', data);
+                alert('Maintenance saved on this device but could not sync to Google Sheet. Ask admin to set deployment to "Anyone".');
+            }
+        } catch (err) {
+            console.warn('Google Sheet save failed:', err);
+            alert('Maintenance saved on this device but could not sync to Google Sheet. Ask admin to set deployment to "Anyone".');
+        }
     }
     return true;
 }
@@ -298,14 +349,19 @@ if (document.getElementById('driverForm')) {
             profit: profit
         };
         
-        // Save trip
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+        }
         const success = await saveTrip(trip);
-        
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Trip';
+        }
         if (success) {
-            // Show success message
             document.getElementById('successMessage').style.display = 'block';
             form.reset();
-            
             setTimeout(() => {
                 document.getElementById('successMessage').style.display = 'none';
             }, 3000);
@@ -338,15 +394,16 @@ if (document.getElementById('loginForm')) {
     });
 }
 
-async function showDashboard() {
+function showDashboard() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('dashboardContent').style.display = 'block';
     initStorage();
-    await populateMonthFilter();
+    populateMonthFilter(); // uses localStorage only, no network
     const select = document.getElementById('monthFilter');
-    // Default to All Time view
-    select.value = 'all';
-    document.getElementById('monthFilter').addEventListener('change', loadDashboard);
+    if (select) {
+        select.value = 'all';
+        select.addEventListener('change', loadDashboard);
+    }
     loadDashboard();
 }
 
@@ -384,90 +441,117 @@ if (document.getElementById('maintenanceForm')) {
             cost: costVal
         };
         
-        await saveMaintenance(maintenance);
+        saveMaintenance(maintenance).catch(function () {});
         maintenanceForm.reset();
-        loadDashboard();
+        var trips = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
+        var maint = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
+        renderDashboard(trips, maint);
     });
 }
 
 
-async function loadDashboard() {
-    const trips = await getTrips();
-    const maintenance = await getMaintenance();
+// When using sheet proxy, fetch trips+maintenance in one request (server does parallel fetch → ~1x cold start instead of 2x).
+async function getTripsAndMaintenanceForDashboard() {
+    if (USE_SHEET_PROXY && GOOGLE_SCRIPT_URL) {
+        try {
+            const res = await fetch('/api/sheet?action=all');
+            const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+            if (res.ok && contentType.includes('application/json')) {
+                const data = await res.json();
+                const trips = Array.isArray(data.trips) ? data.trips : [];
+                const maintenance = Array.isArray(data.maintenance) ? data.maintenance : [];
+                localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
+                localStorage.setItem(MAINTENANCE_KEY, JSON.stringify(maintenance));
+                return { trips, maintenance };
+            }
+        } catch (e) { console.warn('Sheet batch fetch failed:', e); }
+    }
+    const [trips, maintenance] = await Promise.all([getTrips(), getMaintenance()]);
+    return { trips, maintenance };
+}
+
+// Renders dashboard from given trips/maintenance (used for instant cache + later refresh).
+function renderDashboard(trips, maintenance) {
     const selectedMonth = document.getElementById('monthFilter').value;
-    
-    // Filter by month if selected
     let filteredTrips = trips;
     let filteredMaintenance = maintenance;
-    
     if (selectedMonth !== 'all') {
         filteredTrips = trips.filter(trip => {
             const tripDate = new Date(trip.endDate || trip.date);
             return `${tripDate.getFullYear()}-${String(tripDate.getMonth() + 1).padStart(2, '0')}` === selectedMonth;
         });
-        
         filteredMaintenance = maintenance.filter(m => {
             const mDate = new Date(m.date);
             return `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}` === selectedMonth;
         });
     }
-    
-    // Calculate totals
-    const totalRevenue = filteredTrips.reduce((sum, trip) => sum + trip.rentalFee, 0);
-    const totalTripExpenses = filteredTrips.reduce((sum, trip) => sum + trip.totalExpenses, 0);
-    const totalMaintenanceExpenses = filteredMaintenance.reduce((sum, m) => sum + m.cost, 0);
+    const totalRevenue = filteredTrips.reduce((sum, trip) => sum + (trip.rentalFee || 0), 0);
+    const totalTripExpenses = filteredTrips.reduce((sum, trip) => sum + (trip.totalExpenses || 0), 0);
+    const totalMaintenanceExpenses = filteredMaintenance.reduce((sum, m) => sum + (m.cost || 0), 0);
     const totalExpenses = totalTripExpenses + totalMaintenanceExpenses;
     const netProfit = totalRevenue - totalExpenses;
-    
-    // Revenue credited per partner (from trips)
-    const revenueVimal = filteredTrips.filter(t => (t.creditedTo || '').toLowerCase() === 'vimal').reduce((sum, t) => sum + t.rentalFee, 0);
-    const revenueSarath = filteredTrips.filter(t => (t.creditedTo || '').toLowerCase() === 'sarath').reduce((sum, t) => sum + t.rentalFee, 0);
-    
-    // Update stats
-    document.getElementById('totalRevenue').textContent = `₹${totalRevenue.toFixed(2)}`;
-    document.getElementById('totalExpenses').textContent = `₹${totalExpenses.toFixed(2)}`;
-    document.getElementById('netProfit').textContent = `₹${netProfit.toFixed(2)}`;
+    const revenueVimal = filteredTrips.filter(t => (t.creditedTo || '').toLowerCase() === 'vimal').reduce((sum, t) => sum + (t.rentalFee || 0), 0);
+    const revenueSarath = filteredTrips.filter(t => (t.creditedTo || '').toLowerCase() === 'sarath').reduce((sum, t) => sum + (t.rentalFee || 0), 0);
+    document.getElementById('totalRevenue').textContent = '₹' + totalRevenue.toFixed(2);
+    document.getElementById('totalExpenses').textContent = '₹' + totalExpenses.toFixed(2);
+    document.getElementById('netProfit').textContent = '₹' + netProfit.toFixed(2);
     document.getElementById('netProfit').className = netProfit >= 0 ? 'stat-value profit-positive' : 'stat-value profit-negative';
-    document.getElementById('totalTrips').textContent = filteredTrips.length;
-
-    // Profit share calculation:
-    // Split net profit 50/50, then equalize maintenance contributions.
-    // Each partner should effectively bear half of total maintenance.
-    const vimalExpenses = filteredMaintenance.filter(m => (m.stakeholder || '').toLowerCase() === 'vimal').reduce((sum, m) => sum + m.cost, 0);
-    const sarathExpenses = filteredMaintenance.filter(m => (m.stakeholder || '').toLowerCase() === 'sarath').reduce((sum, m) => sum + m.cost, 0);
+    document.getElementById('totalTrips').textContent = String(filteredTrips.length);
+    const vimalExpenses = filteredMaintenance.filter(m => (m.stakeholder || '').toLowerCase() === 'vimal').reduce((sum, m) => sum + (m.cost || 0), 0);
+    const sarathExpenses = filteredMaintenance.filter(m => (m.stakeholder || '').toLowerCase() === 'sarath').reduce((sum, m) => sum + (m.cost || 0), 0);
     const halfMaintenance = totalMaintenanceExpenses / 2;
     const baseShare = netProfit / 2;
     const vShare = baseShare + (vimalExpenses - halfMaintenance);
     const sShare = baseShare + (sarathExpenses - halfMaintenance);
-    document.getElementById('profitShareVimal').textContent = `₹${vShare.toFixed(2)}`;
-    document.getElementById('profitShareSarath').textContent = `₹${sShare.toFixed(2)}`;
-    const vDelta = vimalExpenses - halfMaintenance;
-    const sDelta = sarathExpenses - halfMaintenance;
+    document.getElementById('profitShareVimal').textContent = '₹' + vShare.toFixed(2);
+    document.getElementById('profitShareSarath').textContent = '₹' + sShare.toFixed(2);
+    var prV = document.getElementById('partnerReceivedVimal');
+    var psV = document.getElementById('partnerSpentVimal');
+    var prS = document.getElementById('partnerReceivedSarath');
+    var psS = document.getElementById('partnerSpentSarath');
+    if (prV) prV.textContent = 'Received: ₹' + revenueVimal.toFixed(2);
+    if (psV) psV.textContent = 'Spent (maintenance): ₹' + vimalExpenses.toFixed(2);
+    if (prS) prS.textContent = 'Received: ₹' + revenueSarath.toFixed(2);
+    if (psS) psS.textContent = 'Spent (maintenance): ₹' + sarathExpenses.toFixed(2);
     function fmtAdj(amount) {
         const sign = amount >= 0 ? '+' : '-';
-        return `${sign}₹${Math.abs(amount).toFixed(2)} ${amount >= 0 ? 'from partner' : 'to partner'}`;
+        return sign + '₹' + Math.abs(amount).toFixed(2) + (amount >= 0 ? ' from partner' : ' to partner');
     }
+    const vDelta = vimalExpenses - halfMaintenance;
+    const sDelta = sarathExpenses - halfMaintenance;
     const vAdjEl = document.getElementById('profitAdjustVimal');
     const sAdjEl = document.getElementById('profitAdjustSarath');
-    if (vAdjEl) vAdjEl.textContent = `Maintenance Equalization ${fmtAdj(vDelta)}`;
-    if (sAdjEl) sAdjEl.textContent = `Maintenance Equalization ${fmtAdj(sDelta)}`;
-
-    // Settlement based on credited revenue minus maintenance, to reach baseShare
+    if (vAdjEl) vAdjEl.textContent = 'Maintenance Equalization ' + fmtAdj(vDelta);
+    if (sAdjEl) sAdjEl.textContent = 'Maintenance Equalization ' + fmtAdj(sDelta);
     const cashV = revenueVimal - vimalExpenses;
     const cashS = revenueSarath - sarathExpenses;
-    const settleV = baseShare - cashV; // + means receive from partner, - means pay to partner
+    const settleV = baseShare - cashV;
     const settleS = baseShare - cashS;
     const vSettleEl = document.getElementById('settlementVimal');
     const sSettleEl = document.getElementById('settlementSarath');
-    if (vSettleEl) vSettleEl.textContent = `Settlement ${fmtAdj(settleV)}`;
-    if (sSettleEl) sSettleEl.textContent = `Settlement ${fmtAdj(settleS)}`;
-    
-    // Load trips table
+    if (vSettleEl) vSettleEl.textContent = 'Settlement ' + fmtAdj(settleV);
+    if (sSettleEl) sSettleEl.textContent = 'Settlement ' + fmtAdj(settleS);
     loadTripsTable(filteredTrips);
-    
-    // Load maintenance table
     loadMaintenanceTable(filteredMaintenance);
+}
 
+async function loadDashboard() {
+    // 1. Show cached data immediately (no wait)
+    var cachedTrips = [];
+    var cachedMaint = [];
+    try {
+        cachedTrips = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
+        cachedMaint = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
+    } catch (e) {}
+    renderDashboard(cachedTrips, cachedMaint);
+
+    // 2. Refresh from Sheet in background (one request: action=all); update when done
+    getTripsAndMaintenanceForDashboard().then(function (fresh) {
+        var trips = (fresh.trips || []).filter(function (t) { return !recentlyDeletedTripIds[String(t.id)]; });
+        var maintenance = (fresh.maintenance || []).filter(function (m) { return !recentlyDeletedMaintenanceIds[String(m.id)]; });
+        populateMonthFilter(trips, maintenance);
+        renderDashboard(trips, maintenance);
+    }).catch(function () {});
 }
 
 function loadTripsTable(trips) {
@@ -529,36 +613,40 @@ function loadMaintenanceTable(maintenance) {
 }
 
 
-async function populateMonthFilter() {
-    const trips = await getTrips();
-    const maintenance = await getMaintenance();
+// Use cached data (trips/maintenance) so we don't trigger extra sheet requests. Pass nothing = read from localStorage.
+function populateMonthFilter(trips, maintenance) {
+    if (trips == null || maintenance == null) {
+        try {
+            trips = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
+            maintenance = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
+        } catch (e) {
+            trips = [];
+            maintenance = [];
+        }
+    }
     const allDates = [
-        ...trips.map(t => new Date(t.endDate || t.date)),
-        ...maintenance.map(m => new Date(m.date))
+        ...(trips || []).map(t => new Date(t.endDate || t.date)),
+        ...(maintenance || []).map(m => new Date(m.date))
     ];
-    
+    const select = document.getElementById('monthFilter');
+    if (!select) return;
+    // Keep "All Time" and clear only month options
+    while (select.options.length > 1) select.remove(1);
     if (allDates.length === 0) return;
-    
     const months = new Set();
     allDates.forEach(date => {
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         months.add(monthKey);
     });
-    
     const sortedMonths = Array.from(months).sort().reverse();
-    const select = document.getElementById('monthFilter');
-    
     sortedMonths.forEach(month => {
         const [year, monthNum] = month.split('-');
         const date = new Date(year, monthNum - 1);
         const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' });
-        
         const option = document.createElement('option');
         option.value = month;
         option.textContent = monthName;
         select.appendChild(option);
-
-        // Month tabs removed; dropdown controls the view
     });
 }
 
@@ -567,19 +655,26 @@ async function deleteTrip(id) {
     
     if (firebaseEnabled) {
         try {
-            // Soft delete: mark as deleted, do not erase backend record
             await updateDoc(doc(db, 'trips', id), { deleted: true, deletedAt: new Date().toISOString() });
         } catch (e) {
             console.error("Error soft-deleting trip:", e);
         }
+        loadDashboard();
     } else {
         const trips = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
         const filtered = trips.filter(trip => String(trip.id) !== String(id));
         localStorage.setItem(TRIPS_KEY, JSON.stringify(filtered));
-        // Archive delete
         sendToArchive('/api/delete_trip', { id });
+        recentlyDeletedTripIds[String(id)] = Date.now();
+        setTimeout(function () { delete recentlyDeletedTripIds[String(id)]; }, 10000);
+        if (GOOGLE_SCRIPT_URL) {
+            var url = USE_SHEET_PROXY ? '/api/sheet' : GOOGLE_SCRIPT_URL;
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'delete_trip', id: id }) }).catch(function () {});
+        }
+        var t = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
+        var m = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
+        renderDashboard(t, m);
     }
-    loadDashboard();
 }
 
 async function deleteMaintenance(id) {
@@ -587,19 +682,26 @@ async function deleteMaintenance(id) {
     
     if (firebaseEnabled) {
         try {
-            // Soft delete: mark as deleted
             await updateDoc(doc(db, 'maintenance', id), { deleted: true, deletedAt: new Date().toISOString() });
         } catch (e) {
             console.error("Error soft-deleting maintenance:", e);
         }
+        loadDashboard();
     } else {
         const maintenance = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
         const filtered = maintenance.filter(m => String(m.id) !== String(id));
         localStorage.setItem(MAINTENANCE_KEY, JSON.stringify(filtered));
-        // Archive delete
         sendToArchive('/api/delete_maintenance', { id });
+        recentlyDeletedMaintenanceIds[String(id)] = Date.now();
+        setTimeout(function () { delete recentlyDeletedMaintenanceIds[String(id)]; }, 10000);
+        if (GOOGLE_SCRIPT_URL) {
+            var url = USE_SHEET_PROXY ? '/api/sheet' : GOOGLE_SCRIPT_URL;
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'delete_maintenance', id: id }) }).catch(function () {});
+        }
+        var t = JSON.parse(localStorage.getItem(TRIPS_KEY) || '[]');
+        var m = JSON.parse(localStorage.getItem(MAINTENANCE_KEY) || '[]');
+        renderDashboard(t, m);
     }
-    loadDashboard();
 }
 
 // Edit Trip (supports Firebase and localStorage)
